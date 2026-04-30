@@ -12,7 +12,6 @@ const expLayer = L.layerGroup();
 
 // --- SMART VALUE FINDER ---
 function getVal(props, isExposureLayer) {
-    // UPDATED: Exposure layer uses "Exposure" column, others use "_mean"
     if (isExposureLayer) {
         return props["Exposure"] || 0;
     }
@@ -35,9 +34,18 @@ function createPopup(feature, layer, label, isExposureLayer) {
     }
 }
 
-// 4. Color Logic (Synchronized with your QGIS Screenshots)
+// 4. Color Logic
 function getExposureColor(d) {
-    // Range: 0 - 5.55+ (Using your screenshot breaks)
+    // UPDATED: Values specifically for the Exposure Layer from your QGIS screenshot
+    return d > 58.9 ? '#67000d' : // Darkest Maroon
+           d > 27.2 ? '#ef3b2c' : // Deep Red
+           d > 11.8 ? '#fb6a4a' : // Red-Orange
+           d > 3.6  ? '#fcbba1' : // Light Pink/Peach
+                      '#66bd63'; // Green
+}
+
+// Keep original color logic for Population (separate from Exposure)
+function getPopulationColor(d) {
     return d > 5.55 ? '#ff0000' : 
            d > 1.86 ? '#ff4d4d' : 
            d > 0.67 ? '#ff9999' : 
@@ -56,7 +64,7 @@ function getPM25Color(d) {
 // 5. Load Data
 async function loadData() {
     try {
-        // PM 2.5
+        // PM 2.5 (No changes)
         const resPM = await fetch('./Data/Bhutan_pm2.5.geojson');
         const dataPM = await resPM.json();
         L.geoJson(dataPM, {
@@ -69,7 +77,7 @@ async function loadData() {
             }
         }).addTo(pm25Layer);
 
-        // Exposure (TARGETS 'Exposure' COLUMN)
+        // Exposure (UPDATED COLORS AND SCALE)
         const resExp = await fetch('./Data/Bhutan_Exposure.geojson');
         const dataExp = await resExp.json();
         L.geoJson(dataExp, {
@@ -82,12 +90,12 @@ async function loadData() {
             }
         }).addTo(expLayer);
 
-        // Population
+        // Population (No changes to colors/scale)
         const resPop = await fetch('./Data/Bhutan_population.geojson');
         const dataPop = await resPop.json();
         L.geoJson(dataPop, {
             style: (f) => ({
-                fillColor: getExposureColor(getVal(f.properties, false)), 
+                fillColor: getPopulationColor(getVal(f.properties, false)), 
                 fillOpacity: 0.8, weight: 0.3, color: 'white'
             }),
             onEachFeature: (feature, layer) => {
@@ -96,11 +104,11 @@ async function loadData() {
         }).addTo(popLayer);
 
     } catch (err) {
-        console.error("Error loading files. Check if file names match exactly (case-sensitive) on GitHub.", err);
+        console.error("Error loading files.", err);
     }
 }
 
-// 6. Legend Logic (Updated Hex codes and Grades)
+// 6. Legend Logic
 const legend = L.control({ position: 'bottomright' });
 function updateLegend(type) {
     legend.onAdd = function() {
@@ -112,10 +120,12 @@ function updateLegend(type) {
             grades = [8.3, 11.8, 13.9, 17.0, 21.2];
             colors = ['#66bd63', '#fee08b', '#fdae61', '#f46d43', '#d73027'];
         } else if (type === 'exposure') {
-            title = "Exposure Index";
-            grades = [0, 0.2, 0.67, 1.86, 5.55];
-            colors = ['#66bd63', '#ffcccc', '#ff9999', '#ff4d4d', '#ff0000'];
+            // UPDATED: Specifically for the new Exposure screenshot
+            title = "Exposure Risk";
+            grades = [0, 3.6, 11.8, 27.2, 58.9];
+            colors = ['#66bd63', '#fcbba1', '#fb6a4a', '#ef3b2c', '#67000d'];
         } else {
+            // Population (Kept exactly as before)
             title = "Population Index";
             grades = [0, 0.2, 0.67, 1.86, 5.55];
             colors = ['#66bd63', '#ffcccc', '#ff9999', '#ff4d4d', '#ff0000'];
