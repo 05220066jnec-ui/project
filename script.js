@@ -10,34 +10,52 @@ const pm25Layer = L.layerGroup().addTo(map);
 const popLayer = L.layerGroup();
 const expLayer = L.layerGroup();
 
-// --- THE FIX: Property Name for _mean ---
-function getVal(props) {
+function zoomToBhutan() {
+  map.setView([27.5, 90.4], 8);
+}
+
+// --- SMART VALUE FINDER ---
+function getVal(props, isExposureLayer) {
+    if (isExposureLayer) {
+        return props["Exposure"] || 0;
+    }
     return props["_mean"] || 0; 
 }
 
-// --- UPDATED: Dynamic Pop-up Function ---
-function createPopup(feature, layer, label) {
-    if (feature.properties && feature.properties["_mean"]) {
-        let meanVal = feature.properties["_mean"].toFixed(2);
-        
-        // Custom HTML for the popup to make it look professional
+// --- DYNAMIC POP-UP ---
+function createPopup(feature, layer, label, isExposureLayer) {
+    let val = isExposureLayer ? feature.properties["Exposure"] : feature.properties["_mean"];
+    
+    if (val !== undefined && val !== null) {
+        let displayVal = parseFloat(val).toFixed(2);
         let content = `
             <div style="font-family: sans-serif; padding: 5px;">
                 <strong style="color: #555; font-size: 12px; text-transform: uppercase;">${label}</strong><br/>
-                <span style="font-size: 18px; font-weight: bold; color: #2c3e50;">${meanVal}</span>
+                <span style="font-size: 18px; font-weight: bold; color: #2c3e50;">${displayVal}</span>
             </div>
         `;
         layer.bindPopup(content);
     }
 }
 
+
 // 4. Color Logic
 function getExposureColor(d) {
+    // UPDATED: Values specifically for the Exposure Layer from your QGIS screenshot
+    return d > 58.9 ? '#67000d' : // Darkest Maroon
+           d > 27.2 ? '#ef3b2c' : // Deep Red
+           d > 11.8 ? '#fb6a4a' : // Red-Orange
+           d > 3.6  ? '#fcbba1' : // Light Pink/Peach
+                      '#66bd63'; // Green
+}
+
+// Keep original color logic for Population (separate from Exposure)
+function getPopulationColor(d) {
     return d > 5.55 ? '#ff0000' : 
            d > 1.86 ? '#ff4d4d' : 
            d > 0.67 ? '#ff9999' : 
            d > 0.2  ? '#ffcccc' : 
-                      '#00ff00'; 
+                      '#66bd63'; 
 }
 
 function getPM25Color(d) {
@@ -51,48 +69,47 @@ function getPM25Color(d) {
 // 5. Load Data
 async function loadData() {
     try {
-        // PM 2.5
+        // PM 2.5 (No changes)
         const resPM = await fetch('./Data/Bhutan_pm2.5.geojson');
         const dataPM = await resPM.json();
         L.geoJson(dataPM, {
             style: (f) => ({
-                fillColor: getPM25Color(getVal(f.properties)),
+                fillColor: getPM25Color(getVal(f.properties, false)),
                 fillOpacity: 0.8, weight: 0.3, color: 'white'
             }),
             onEachFeature: (feature, layer) => {
-                createPopup(feature, layer, "PM2.5 Concentration");
+                createPopup(feature, layer, "PM2.5 Concentration", false);
             }
         }).addTo(pm25Layer);
 
-        // Exposure
-        const resExp = await fetch('Data/Bhutan_Exposure.geojson');
+        // Exposure (UPDATED COLORS AND SCALE)
+        const resExp = await fetch('./Data/Bhutan_Exposure.geojson');
         const dataExp = await resExp.json();
         L.geoJson(dataExp, {
             style: (f) => ({
-                fillColor: getExposureColor(getVal(f.properties)),
+                fillColor: getExposureColor(getVal(f.properties, true)),
                 fillOpacity: 0.8, weight: 0.3, color: 'white'
             }),
             onEachFeature: (feature, layer) => {
-                createPopup(feature, layer, "Exposure Risk");
+                createPopup(feature, layer, "Exposure Risk", true);
             }
         }).addTo(expLayer);
 
-        // Population
+        // Population (No changes to colors/scale)
         const resPop = await fetch('./Data/Bhutan_population.geojson');
         const dataPop = await resPop.json();
         L.geoJson(dataPop, {
             style: (f) => ({
-                fillColor: getExposureColor(getVal(f.properties)), 
+                fillColor: getPopulationColor(getVal(f.properties, false)), 
                 fillOpacity: 0.8, weight: 0.3, color: 'white'
             }),
             onEachFeature: (feature, layer) => {
-                createPopup(feature, layer, "Population Density");
+                createPopup(feature, layer, "Population Density", false);
             }
         }).addTo(popLayer);
 
-        console.log("Success! Custom popups enabled for all layers.");
     } catch (err) {
-        console.error("Error loading files:", err);
+        console.error("Error loading files.", err);
     }
 }
 
@@ -107,10 +124,16 @@ function updateLegend(type) {
             title = "PM2.5 Concentration";
             grades = [8.3, 11.8, 13.9, 17.0, 21.2];
             colors = ['#66bd63', '#fee08b', '#fdae61', '#f46d43', '#d73027'];
+        } else if (type === 'exposure') {
+            // UPDATED: Specifically for the new Exposure screenshot
+            title = "Exposure Risk";
+            grades = [0, 3.6, 11.8, 27.2, 58.9];
+            colors = ['#66bd63', '#fcbba1', '#fb6a4a', '#ef3b2c', '#67000d'];
         } else {
-            title = type === 'exposure' ? "Exposure Index" : "Population Index";
+            // Population (Kept exactly as before)
+            title = "Population Index";
             grades = [0, 0.2, 0.67, 1.86, 5.55];
-            colors = ['#00ff00', '#ffcccc', '#ff9999', '#ff4d4d', '#ff0000'];
+            colors = ['#66bd63', '#ffcccc', '#ff9999', '#ff4d4d', '#ff0000'];
         }
 
         div.innerHTML = `<h4>${title}</h4>`;
@@ -137,33 +160,59 @@ L.control.layers(baseMaps, overlays, { collapsed: false }).addTo(map);
 loadData();
 updateLegend('pm25');
 
+
+
 // --- GIS PLUGINS ---
-
-// 1. Mouse Coordinates
-L.control.coordinates({
-    position: "bottomleft",
-    decimals: 4,
-    labelTemplateLat: "Lat: {y}",
-    labelTemplateLng: "Lng: {x}",
-    useDMS: false
-}).addTo(map);
-
-// 2. Measurement Tool
-const measureControl = new L.Control.Measure({
-    position: 'topright',
-    primaryLengthUnit: 'kilometers',
-    primaryAreaUnit: 'sqmeters',
-    activeColor: '#db4a44',
-    completedColor: '#8b2d2a'
-});
-measureControl.addTo(map);
-
-// 3. Search Bar
+L.control.coordinates({ position: "bottomleft", decimals: 4, useDMS: false }).addTo(map);
+new L.Control.Measure({ position: 'topright', primaryLengthUnit: 'kilometers', activeColor: '#db4a44' }).addTo(map);
 L.Control.geocoder().addTo(map);
+L.control.scale({ metric: true, imperial: false, position: 'bottomleft' }).addTo(map);
 
-// 4. Distance Scale
-L.control.scale({
-    metric: true,
-    imperial: false,
-    position: 'bottomleft'
-}).addTo(map);
+
+// =====================================================
+// ✅ AREA MEASUREMENT TOOL
+// =====================================================
+
+// Layer to store drawn shapes
+const drawnItems = new L.FeatureGroup();
+map.addLayer(drawnItems);
+
+// Draw control (only polygon for area)
+const drawControl = new L.Control.Draw({
+    position: "topleft",
+    draw: {
+        polyline: false,
+        rectangle: false,
+        circle: false,
+        marker: false,
+        circlemarker: false,
+        polygon: {
+            allowIntersection: false,
+            showArea: true,
+            shapeOptions: {
+                color: '#e74c3c'
+            }
+        }
+    },
+    edit: {
+        featureGroup: drawnItems
+    }
+});
+
+map.addControl(drawControl);
+
+// When user draws polygon
+map.on(L.Draw.Event.CREATED, function (event) {
+    const layer = event.layer;
+
+    // Calculate area
+    const area = L.GeometryUtil.geodesicArea(layer.getLatLngs()[0]);
+
+    // Convert to sq.km
+    const areaKm = (area / 1000000).toFixed(2);
+
+    // Bind popup with result
+    layer.bindPopup("Area: " + areaKm + " km²").openPopup();
+
+    drawnItems.addLayer(layer);
+});
